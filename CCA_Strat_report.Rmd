@@ -1,0 +1,1221 @@
+---
+title: "Stratification of FA and Lipid data"
+author: "Harry Tong"
+date: "27/06/2017"
+output: 
+  pdf_document:
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+\section{Introduction}
+This report, in the field of Lipodomics, will focus on a primary the relationship between Fatty Acids and Lipids. The analysis will investigate which fatty acids bond together in order to create a particular lipid pool. These two observable biological molecules are found in a given  blood sample and are thought to orginate from the phospholipid bilayer in T-cells and from the composition of lipoprotein particles. 
+
+The test data in relation to this research also has metadata attached to the chemical analysis of and  individuals blood sample. This allows the data to be stratified in to individuals that are in a certain age, gender or BMI group. Hence, will produce a clearer initial analysis of these relationships, due to the reduction of noise from this method. In turn, this will produce more precise results when using more sophisticated techniques, such as Bayesian Hierachical Clustering and Mixture Models.
+
+\section{Data cleanse}
+
+First we load the data in to R Statistical from a CSV and cleanse to just the meta data and a reference to the other metrics for ease of computation.
+
+```{r Import, echo=FALSE}
+X <- data.frame(read.csv("~/Dropbox/Leeds_EPSRC+FSN_SummerStudentship_2017/Harry_Sweave/approx450_NDNS_data_signals_DIMS_clean_GC_fattyacids_nomen-check.csv", header =TRUE))
+```
+
+Load the "approx450\_NDNS\_data\_signals\_DIMS\_clean\_GC\_fattyacids\_nomen-check.csv" dataset.
+
+```{r Cleanse data, echo=TRUE, tidy = TRUE}
+Xmat <- as.matrix(X)
+X.strat <- cbind.data.frame(X[,1],X[,210], X[,211],X[,212],X[,213],X[,214])
+Xmat.strat<- as.matrix(X.strat)
+colnames(Xmat.strat)<- c("Ref", "Age", "Gender", "Height", "Weight", "BMI")
+Xmat.strat<- Xmat.strat[-1,]
+```
+
+\section{Stratifcation}
+Now, we can stratify the data. First, we will separate by age in to three classes, 'Under 18', '18 to 60', 'Over 60'.
+
+```{r Strat age, echo = TRUE, tidy = TRUE }
+#U18
+X.u18<- subset(Xmat.strat, as.numeric(Xmat.strat[,2]) < 18, select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI"))
+X.u18<-as.data.frame(X.u18)
+
+#18-60
+X.u60<- subset(Xmat.strat,as.numeric(Xmat.strat[,2]) < 60, select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI"))
+X.18_60<- subset(X.u60, as.numeric(X.u60[,2]) >= 18, select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI"))
+X.18_60<- as.data.frame(X.18_60)
+
+#Over 60
+X.o60<- subset(Xmat.strat, as.numeric(Xmat.strat[,2]) >60, select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI"))
+X.o60<-as.data.frame(X.o60)
+```
+
+Now stratify the sample by gender, male or female.
+
+```{r Strat gender, echo = TRUE, tidy = TRUE }
+#Male
+X.Male<- subset(Xmat.strat, Xmat.strat[,3] == "Male", select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI"))
+X.Male<- as.data.frame(X.Male)
+
+#Female
+X.Female<- subset(Xmat.strat, Xmat.strat[,3] == "Female", select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI"))
+X.Female<- as.data.frame(X.Female)
+```
+It is not sensible to stratify by height and weight since they need to be combined for individuals to be comparable. Hence, we stratify by BMI in to 3 categories, underweight (BMI of less than 18.5), average BMI (BMI between 18.5 and 25), overweight and obese (BMI of over 25). It should be noted that this separation does not take into account the BMI ranges used for clinical stratification, but acts as our first approximation to ensure we have sufficient sample sizes from our dataset.
+
+```{r Strat bmi, echo = TRUE, tidy = TRUE }
+#First, the underweight category (BMI of less than 18.5)
+X.underweight<-subset(Xmat.strat, as.numeric(Xmat.strat[,6]) < 18.5, select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI")) 
+#This does not account for the individuals with missing BMI data
+X.underweight<-subset(X.underweight, as.numeric(X.underweight[,6])>0, select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI") )
+X.underweight<- as.data.frame(X.underweight)
+
+#Now, the average category (BMI between 18.5 and 25)
+X.avgbmi<- subset(Xmat.strat, as.numeric(Xmat.strat[,6]) >= 18.5, select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI")) 
+X.avgbmi<-subset(X.avgbmi, as.numeric(X.avgbmi[,6])<25, select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI"))
+X.avgbmi<- as.data.frame(X.avgbmi)
+
+#Finally, overweight and obese (BMI of over 25)
+X.obese<- subset(Xmat.strat, as.numeric(Xmat.strat[,6]) >=25, select = c("Ref", "Age", "Gender", "Height", "Weight", "BMI"))
+X.obese<- as.data.frame(X.obese)
+```
+Since we have stratified the data in to a selection of 8 subsets, we can now examine these to see whether the datasets are large enough to produce valuable analysis.
+
+```{r Strat summary, echo = TRUE, tidy = TRUE }
+Mean_BMI = c( mean(as.numeric(as.character(X.u18[,6]))), mean(as.numeric(as.character(X.18_60[,6]))), mean(as.numeric(as.character(X.o60[,6]))), mean(as.numeric(as.character(X.Male[,6]))), mean(as.numeric(as.character(X.Female[,6]))), mean(as.numeric(as.character(X.underweight[,6]))), mean(as.numeric(as.character(X.avgbmi[,6]))), mean(as.numeric(as.character(X.obese[,6]))))
+Mean_Weight = c(mean(as.numeric(as.character(X.u18[,5]))), mean(as.numeric(as.character(X.18_60[,5]))), mean(as.numeric(as.character(X.o60[,5]))), mean(as.numeric(as.character(X.Male[,5]))), mean(as.numeric(as.character(X.Female[,5]))), mean(as.numeric(as.character(X.underweight[,5]))), mean(as.numeric(as.character(X.avgbmi[,5]))), mean(as.numeric(as.character(X.obese[,5]))))
+Mean_Height = c(mean(as.numeric(as.character(X.u18[,4]))), mean(as.numeric(as.character(X.18_60[,4]))), mean(as.numeric(as.character(X.o60[,4]))), mean(as.numeric(as.character(X.Male[,4]))), mean(as.numeric(as.character(X.Female[,4]))), mean(as.numeric(as.character(X.underweight[,4]))), mean(as.numeric(as.character(X.avgbmi[,4]))), mean(as.numeric(as.character(X.obese[,4]))))
+Number_of_females = c(nrow(X.u18[X.u18$Gender == "Female",]), nrow(X.18_60[X.18_60$Gender == "Female",]), nrow(X.o60[X.o60$Gender == "Female",]), nrow(X.Male[X.Male$Gender == "Female",]), nrow(X.Female[X.Female$Gender == "Female",]), nrow(X.underweight[X.underweight$Gender == "Female",]), nrow(X.avgbmi[X.avgbmi$Gender == "Female",]), nrow(X.obese[X.obese$Gender == "Female",]))
+Number_of_males = c(nrow(X.u18[X.u18$Gender == "Male",]), nrow(X.18_60[X.18_60$Gender == "Male",]), nrow(X.o60[X.o60$Gender == "Male",]), nrow(X.Male[X.Male$Gender == "Male",]), nrow(X.Female[X.Female$Gender == "Male",]), nrow(X.underweight[X.underweight$Gender == "Male",]), nrow(X.avgbmi[X.avgbmi$Gender == "Male",]), nrow(X.obese[X.obese$Gender == "Male",]))
+Mean_Age = c(mean(as.numeric(as.character(X.u18[,2]))), mean(as.numeric(as.character(X.18_60[,2]))), mean(as.numeric(as.character(X.o60[,2]))), mean(as.numeric(as.character(X.Male[,2]))), mean(as.numeric(as.character(X.Female[,2]))), mean(as.numeric(as.character(X.underweight[,2]))), mean(as.numeric(as.character(X.avgbmi[,2]))), mean(as.numeric(as.character(X.obese[,2]))))
+Size = c(nrow(X.u18), nrow(X.18_60), nrow(X.o60), nrow(X.Male), nrow(X.Female), nrow(X.underweight), nrow(X.avgbmi),nrow(X.obese))
+Strata = c("Under 18", "18-25", "25+", "Male", "Female", "Underweight", "Average BMI", "Overweight & Obese")
+datasize<- cbind.data.frame(Strata, Size, Mean_Age, Number_of_males, Number_of_females, Mean_Height, Mean_Weight,  Mean_BMI)
+t(as.data.frame(datasize))
+```
+All strata are sufficiently large (sample size greater than 30) and suitable for further analysis. Now, we can stratify the fatty acid (FA) data set using this meta data and individual's reference to produce meaningful analysis.
+\newpage
+\section{Initial Statistical Analysis}
+Now, we can summarise the stratified FA data so that we have a greater understanding of what we are working with. We can use a 95\% confidence interval to check which of the fatty acids (FAs) are significant at a 5\% level, for each strata.
+
+```{r Strat data, echo = TRUE, tidy = TRUE}
+FA.data <- data.frame(read.csv("~/Dropbox/Leeds_EPSRC+FSN_SummerStudentship_2017/Harry_Sweave/FA_ref.csv", header =TRUE)) 
+
+#Separate fatty acid (FA) data by age
+#U18
+X.u18.FA<- subset(FA.data, as.numeric(FA.data[,40]) < 18)
+X.u18.FA <-as.data.frame(X.u18.FA)
+ 
+
+#18-60
+X.u60.FA<- subset(FA.data, as.numeric(FA.data[,40]) < 60)
+X.18_60.FA<- subset(X.u60.FA, as.numeric(X.u60.FA[,40]) >= 18)
+X.18_60.FA<- as.data.frame(X.18_60.FA)
+
+
+#Over 60
+X.o60.FA<- subset(FA.data, as.numeric(FA.data[,40]) >60)
+X.o60.FA<-as.data.frame(X.o60.FA)
+
+
+#Now separate the FA data by Male and Female
+#Male
+X.Male.FA<- subset(FA.data, FA.data[,41] == "Male")
+X.Male.FA<- as.data.frame(X.Male.FA)
+
+#Female
+X.Female.FA<- subset(FA.data, FA.data[,41] == "Female")
+X.Female.FA<- as.data.frame(X.Female.FA)
+
+#FA data by BMI
+
+#First, the underweight category (BMI of less than 18.5)
+X.underweight.FA<-subset(FA.data, as.numeric(FA.data[,44]) < 18.5) 
+#This does not account for the individuals with missing BMI data
+X.underweight.FA<-subset(X.underweight.FA, as.numeric(X.underweight.FA[,44])>0)
+X.underweight.FA<- as.data.frame(X.underweight.FA)
+
+#Now, the average category (BMI between 18.5 and 25)
+X.avgbmi.FA<- subset(FA.data, as.numeric(FA.data[,44]) >= 18.5) 
+X.avgbmi.FA<-subset(X.avgbmi.FA, as.numeric(X.avgbmi.FA[,44])<25)
+X.avgbmi.FA<- as.data.frame(X.avgbmi.FA)
+
+#Finally, overweight and obese (BMI of over 25)
+X.obese.FA<- subset(FA.data, as.numeric(FA.data[,44]) >=25)
+X.obese.FA<- as.data.frame(X.obese.FA)
+
+FAs= c("C8.0",	"C10.0",	"C11.0",	"C12.0",	"C13.0",	"C14.0",	"C14.1",	"C15.0",	"C15.1",	"C16.0",	"C16.1t",	"C16.1c",	"C17.0",	"C17.1",	"C18.0",	"C18.1n9t",	"C18.1n9c",	"C18.2n6t",	"C18.2n6c",	"C18.3n6",	"C20.0",	"C18.3n3",	"C20.1",	"C21.0",	"C20.2",	"C20.3n6",	"C22.0",	"C20.4n6 +C20.3n3?",	"C22.1n9",	"C23.0",	"C20.5n3",	"C22.2",	"C24.0",	"C22.4",	"C24.1",	"C22.5n6",	"C22.5n3",	"C22.6n3")
+```
+
+\subsection{Under 18}
+```{r u18 fa1, echo = TRUE, tidy = TRUE }
+mean.FA.u18 = vector(mode = "numeric", length = 37)
+se.FA.u18<- vector(mode = "numeric", length = 37)
+X.u18.FA.mat<- as.matrix(X.u18.FA[,c(-1,-40, -41, -42, -43, -44)])
+for(i in 2:39){
+  mean.FA.u18[i-1]<- mean((X.u18.FA[,i]))
+}
+for(i in 2:39){
+  se.FA.u18[i-1]<- (sd((X.u18.FA[,i]))/(sqrt(nrow(X.u18.FA)-1)))
+}
+mean.u18.FA<-cbind.data.frame(FAs, mean.FA.u18)
+summary.FA.u18<- cbind.data.frame(mean.u18.FA, se.FA.u18)
+t(summary.FA.u18)
+plot(mean.u18.FA, ylab ="Abundance", las = 2, xlab= "", main = "FA abundance in u18 strata")
+```
+
+We can list the FAs with significant abundances, for comparison with the Directed Acyclic Graphs of their relations obtained via chemical analysis.
+```{r u18 fa2, echo = TRUE, tidy = TRUE }
+DAG.u18<-c()
+X.u18.FA.mat<- as.matrix(X.u18.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.u18.FA.sig<- X.u18.FA.mat
+row.del.u18 <- c()
+for(i in 1:38){
+    #Check if FAs are significant, taking in to account a 95% confidence interval assuming normal dist
+    if((as.numeric(mean.u18.FA[i,2])-(1.96*summary.FA.u18[i,3])) >1){
+    DAG.u18[length(DAG.u18)+1] <- as.character(mean.u18.FA[i,1])
+    
+  }
+    if((as.numeric(mean.u18.FA[i,2])+(1.96*summary.FA.u18[i,3])) >1){
+    DAG.u18[length(DAG.u18)+1] <- as.character(mean.u18.FA[i,1])
+  }
+    else{ #If the FA is not significant, delete from matrix
+    row.del.u18<- append(row.del.u18, i)
+    }
+}
+DAG.u18<- unique(DAG.u18)
+DAG.u18
+X.u18.FA.sig<- X.u18.FA.mat[,-row.del.u18]
+```
+
+\subsection{18 to 60}
+```{r 18 to 60 fa1, echo = TRUE, tidy = TRUE }
+mean.FA.18_60 = vector(mode = "numeric", length = 37)
+se.FA.18_60<- vector(mode = "numeric", length = 37)
+X.18_60.FA.mat<- as.matrix(X.18_60.FA[,c(-1,-40, -41, -42, -43, -44)])
+for(i in 2:39){
+  mean.FA.18_60[i-1]<- mean((X.18_60.FA[,i]))
+}
+for(i in 2:39){
+  se.FA.18_60[i-1]<- (sd((X.18_60.FA[,i]))/(sqrt(nrow(X.18_60.FA)-1)))
+}
+mean.18_60.FA<-cbind.data.frame(FAs, mean.FA.18_60)
+summary.FA.18_60<- cbind.data.frame(mean.18_60.FA, se.FA.18_60)
+t(summary.FA.18_60)
+plot(mean.18_60.FA, ylab ="Abundance", las = 2, xlab= "", main = "FA abundance in 18-60 strata")
+```
+
+Again, we can list the FAs with significant abundances, for comparison with the Directed Acyclic Graphs of their relations obtained via chemical analysis.
+
+```{r 18 to 60 fa2, echo = TRUE, tidy = TRUE }
+DAG.18_60<-c()
+X.18_60.FA.mat<- as.matrix(X.18_60.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.18_60.FA.sig<- X.18_60.FA.mat
+row.del.18_60 <- c()
+for(i in 1:38){
+    #Check if FAs are significant, taking in to account a 95% confidence interval assuming normal dist
+    if((as.numeric(mean.18_60.FA[i,2])-(1.96*summary.FA.18_60[i,3])) >1){
+    DAG.u18[length(DAG.18_60)+1] <- as.character(mean.18_60.FA[i,1])
+    
+  }
+    if((as.numeric(mean.18_60.FA[i,2])+(1.96*summary.FA.18_60[i,3])) >1){
+    DAG.18_60[length(DAG.18_60)+1] <- as.character(mean.18_60.FA[i,1])
+  }
+    else{ #If the FA is not significant, delete from matrix
+    row.del.18_60<- append(row.del.18_60, i)
+    }
+}
+DAG.18_60<- unique(DAG.18_60)
+DAG.18_60
+X.18_60.FA.sig<- X.18_60.FA.mat[,-row.del.18_60]
+```
+
+\subsection{Over 60}
+```{r over 60 fa1, echo = TRUE, tidy = TRUE }
+mean.FA.o60 = vector(mode = "numeric", length = 37)
+se.FA.o60 = vector(mode = "numeric", length = 37)
+for(i in 2:39){
+  mean.FA.o60[i-1]<- mean((X.o60.FA[,i]))
+}
+for(i in 2:39){
+  se.FA.o60[i-1]<- (sd(X.o60.FA[,i])/(sqrt(nrow(X.o60.FA)-1)))
+}
+mean.o60.FA<-cbind.data.frame(FAs, mean.FA.o60)
+summary.FA.o60<- cbind.data.frame(mean.o60.FA, se.FA.o60)
+t(summary.FA.o60)
+plot(mean.o60.FA, ylab ="Abundance", las = 2, xlab= "", main = "FA abundance in over 60 strata")
+```
+
+List the FAs with significant abundances, for comparison with the Directed Acyclic Graphs of their relations obtained via chemical analysis.
+
+```{r over 60 fa2, echo = TRUE, tidy = TRUE }
+DAG.o60<-c()
+X.o60.FA.mat<- as.matrix(X.o60.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.o60.FA.sig<- X.o60.FA.mat
+row.del.o60 <- c()
+for(i in 1:38){
+    #Check if FAs are significant, taking in to account a 95% confidence interval assuming normal dist
+    if((as.numeric(mean.o60.FA[i,2])-(1.96*summary.FA.o60[i,3])) >1){
+    DAG.o60[length(DAG.o60)+1] <- as.character(mean.o60.FA[i,1])
+    
+  }
+    if((as.numeric(mean.o60.FA[i,2])+(1.96*summary.FA.o60[i,3])) >1){
+    DAG.o60[length(DAG.o60)+1] <- as.character(mean.o60.FA[i,1])
+  }
+    else{ #If the FA is not significant, delete from matrix
+    row.del.o60<- append(row.del.o60, i)
+    }
+}
+DAG.o60<- unique(DAG.o60)
+DAG.o60
+X.o60.FA.sig<- X.o60.FA.mat[,-row.del.o60]
+```
+\subsection{Male}
+
+```{r male fa1, echo = TRUE, tidy = TRUE }
+mean.FA.Male = vector(mode = "numeric", length = 37)
+se.FA.Male = vector(mode = "numeric", length = 37)
+for(i in 2:39){
+  mean.FA.Male[i-1]<- mean((X.Male.FA[,i]))
+}
+for(i in 2:39){
+  se.FA.Male[i-1]<- (sd(X.Male.FA[,i])/(sqrt(nrow(X.Male.FA)-1)))
+}
+mean.Male.FA<-cbind.data.frame(FAs, mean.FA.Male)
+summary.FA.Male<- cbind.data.frame(mean.Male.FA, se.FA.Male)
+t(summary.FA.Male)
+plot(mean.Male.FA, ylab ="Abundance", las = 2, xlab= "", main = "FA abundance in male strata")
+```
+
+We can list the FAs with significant abundances, for comparison with the Directed Acyclic Graphs of their relations obtained via chemical analysis.
+
+```{r male fa2, echo = TRUE, tidy = TRUE }
+DAG.Male<-c()
+X.Male.FA.mat<- as.matrix(X.Male.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.Male.FA.sig<- X.Male.FA.mat
+row.del.Male <- c()
+for(i in 1:38){
+    #Check if FAs are significant, taking in to account a 95% confidence interval assuming normal dist
+    if((as.numeric(mean.Male.FA[i,2])-(1.96*summary.FA.Male[i,3])) >1){
+    DAG.Male[length(DAG.Male)+1] <- as.character(mean.Male.FA[i,1])
+    
+  }
+    if((as.numeric(mean.Male.FA[i,2])+(1.96*summary.FA.Male[i,3])) >1){
+    DAG.Male[length(DAG.Male)+1] <- as.character(mean.Male.FA[i,1])
+  }
+    else{ #If the FA is not significant, delete from matrix
+    row.del.Male<- append(row.del.Male, i)
+    }
+}
+DAG.Male<- unique(DAG.Male)
+DAG.Male
+X.Male.FA.sig<- X.Male.FA.mat[,-row.del.Male]
+```
+
+\subsection{Female}
+```{r female fa1, echo = TRUE, tidy = TRUE }
+mean.FA.Female = vector(mode = "numeric", length = 37)
+se.FA.Female = vector(mode = "numeric", length = 37)
+for(i in 2:39){
+  mean.FA.Female[i-1]<- mean((X.Female.FA[,i]))
+}
+for(i in 2:39){
+  se.FA.Female[i-1]<- (sd(X.Female.FA[,i])/(sqrt(nrow(X.Female.FA)-1)))
+}
+mean.Female.FA<-cbind.data.frame(FAs, mean.FA.Female)
+summary.FA.Female<- cbind.data.frame(mean.Female.FA, se.FA.Female)
+t(summary.FA.Female)
+plot(mean.Female.FA, ylab ="Abundance", las = 2, xlab= "", main = "FA abundance in female strata")
+```
+
+We can list the FAs with significant abundances, for comparison with the Directed Acyclic Graphs of their relations obtained via chemical analysis.
+
+```{r female fa2, echo = TRUE, tidy = TRUE }
+DAG.Female<-c()
+X.Female.FA.mat<- as.matrix(X.Female.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.Female.FA.sig<- X.Female.FA.mat
+row.del.Female <- c()
+for(i in 1:38){
+    #Check if FAs are significant, taking in to account a 95% confidence interval assuming normal dist
+    if((as.numeric(mean.Female.FA[i,2])-(1.96*summary.FA.Female[i,3])) >1){
+    DAG.Female[length(DAG.Female)+1] <- as.character(mean.Female.FA[i,1])
+    
+  }
+    if((as.numeric(mean.Female.FA[i,2])+(1.96*summary.FA.Female[i,3])) >1){
+    DAG.Female[length(DAG.Female)+1] <- as.character(mean.Female.FA[i,1])
+  }
+    else{ #If the FA is not significant, delete from matrix
+    row.del.Female<- append(row.del.Female, i)
+    }
+}
+DAG.Female<- unique(DAG.Female)
+DAG.Female
+X.Female.FA.sig<- X.Female.FA.mat[,-row.del.Female]
+```
+
+\subsection{Underweight}
+```{r underweight fa1, echo = TRUE, tidy = TRUE }
+mean.FA.underweight = vector(mode = "numeric", length = 37)
+se.FA.underweight = vector(mode = "numeric", length = 37)
+for(i in 2:39){
+  mean.FA.underweight[i-1]<- mean((X.underweight.FA[,i]))
+}
+for(i in 2:39){
+  se.FA.underweight[i-1]<- (sd(X.underweight.FA[,i])/(sqrt(nrow(X.underweight.FA)-1)))
+}
+mean.underweight.FA<-cbind.data.frame(FAs, mean.FA.underweight)
+summary.FA.underweight<- cbind.data.frame(mean.underweight.FA, se.FA.underweight)
+t(summary.FA.underweight)
+plot(mean.underweight.FA, ylab ="Abundance", las = 2, xlab= "", main = "FA abundance in underweight strata")
+```
+
+We can list the FAs with significant abundances, for comparison with the Directed Acyclic Graphs of their relations obtained via chemical analysis.
+
+```{r underweight fa2, echo = TRUE, tidy = TRUE }
+DAG.underweight<-c()
+X.underweight.FA.mat<- as.matrix(X.underweight.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.underweight.FA.sig<- X.underweight.FA.mat
+row.del.underweight <- c()
+for(i in 1:38){
+    #Check if FAs are significant, taking in to account a 95% confidence interval assuming normal dist
+    if((as.numeric(mean.underweight.FA[i,2])-(1.96*summary.FA.underweight[i,3])) >1){
+    DAG.underweight[length(DAG.underweight)+1] <- as.character(mean.underweight.FA[i,1])
+    
+  }
+    if((as.numeric(mean.underweight.FA[i,2])+ (1.96*summary.FA.underweight[i,3])) >1){
+    DAG.underweight[length(DAG.underweight)+1] <- as.character(mean.underweight.FA[i,1])
+  }
+    else{ #If the FA is not significant, delete from matrix
+    row.del.underweight<- append(row.del.underweight, i)
+    }
+}
+DAG.underweight<- unique(DAG.underweight)
+DAG.underweight
+X.underweight.FA.sig<- X.underweight.FA.mat[,-row.del.underweight]
+```
+
+\subsection{Average BMI}
+```{r average bmi fa1, echo = TRUE, tidy = TRUE }
+mean.FA.avgbmi = vector(mode = "numeric", length = 37)
+se.FA.avgbmi = vector(mode = "numeric", length = 37)
+for(i in 2:39){
+  mean.FA.avgbmi[i-1]<- mean((X.avgbmi.FA[,i]))
+}
+for(i in 2:39){
+  se.FA.avgbmi[i-1]<- (sd(X.avgbmi.FA[,i])/(sqrt(nrow(X.avgbmi.FA)-1)))
+}
+mean.avgbmi.FA<-cbind.data.frame(FAs, mean.FA.avgbmi)
+summary.FA.avgbmi<- cbind.data.frame(mean.avgbmi.FA, se.FA.avgbmi)
+t(summary.FA.avgbmi)
+plot(mean.avgbmi.FA, ylab ="Abundance", las = 2, xlab= "", main = "FA abundance in average BMI strata")
+```
+
+We can list the FAs with significant abundances, for comparison with the Directed Acyclic Graphs of their relations obtained via chemical analysis.
+
+```{r average bmi fa2, echo = TRUE, tidy = TRUE }
+DAG.avgbmi<-c()
+X.avgbmi.FA.mat<- as.matrix(X.avgbmi.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.avgbmi.FA.sig<- X.avgbmi.FA.mat
+row.del.avgbmi <- c()
+for(i in 1:38){
+    #Check if FAs are significant, taking in to account a 95% confidence interval assuming normal dist
+    if((as.numeric(mean.avgbmi.FA[i,2])-(1.96*summary.FA.avgbmi[i,3])) >1){
+    DAG.avgbmi[length(DAG.avgbmi)+1] <- as.character(mean.avgbmi.FA[i,1])
+    }
+    if((as.numeric(mean.avgbmi.FA[i,2])+(1.96*summary.FA.avgbmi[i,3])) >1){
+    DAG.avgbmi[length(DAG.avgbmi)+1] <- as.character(mean.avgbmi.FA[i,1])
+    }
+    else{ row.del.avgbmi<- append(row.del.avgbmi, i)
+    }
+}
+DAG.avgbmi<- unique(DAG.avgbmi)
+DAG.avgbmi
+X.avgbmi.FA.sig<- X.avgbmi.FA.mat[,-row.del.avgbmi]
+```
+
+\subsection{Overweight and Obese}
+```{r overweight fa1, echo = TRUE, tidy = TRUE }
+mean.FA.obese = vector(mode = "numeric", length = 37)
+se.FA.obese = vector(mode = "numeric", length = 37)
+
+for(i in 2:39){
+  mean.FA.obese[i-1]<- mean((X.obese.FA[,i]))
+}
+for(i in 2:39){
+  se.FA.obese[i-1]<- ((sd(X.obese.FA[,i])/(sqrt(nrow(X.obese.FA)-1))))
+}
+mean.obese.FA<-cbind.data.frame(FAs, mean.FA.obese)
+summary.FA.obese<- cbind.data.frame(mean.obese.FA, se.FA.obese)
+summary.FA.obese
+plot(mean.obese.FA, ylab ="Abundance", las = 2, xlab= "", main = "FA abundance in overweight strata")
+```
+
+We can list the FAs with significant abundances, for comparison with the Directed Acyclic Graphs of their relations obtained via chemical analysis.
+
+```{r overweight fa2, echo = TRUE, tidy = TRUE }
+DAG.obese<-c()
+X.obese.FA.mat<- as.matrix(X.obese.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.obese.FA.sig<- X.obese.FA.mat
+row.del.obese <- c()
+for(i in 1:38){
+    #Check if FAs are significant, taking in to account a 95% confidence interval assuming normal dist
+    if((as.numeric(mean.obese.FA[i,2])-(1.96*summary.FA.obese[i,3])) >1){
+    DAG.obese[length(DAG.obese)+1] <- as.character(mean.obese.FA[i,1])
+    
+  }
+    if((as.numeric(mean.obese.FA[i,2])+(1.96*summary.FA.obese[i,3])) >1){
+    DAG.obese[length(DAG.obese)+1] <- as.character(mean.obese.FA[i,1])
+  }
+    else{ #If the FA is not significant, delete from matrix
+    row.del.obese<- append(row.del.obese, i)
+    }
+}
+DAG.obese<- unique(DAG.obese)
+DAG.obese
+X.obese.FA.sig<- X.obese.FA.mat[,-row.del.obese]
+```
+
+\subsection{Summary}
+As can be seen by the plots of main abundances, the distribution of the FAs is similar for all strata. For each of these strata, the R code after the plot selects the FAs that have a significant abundances. Now, let us compare these below.
+```{r fa summary, echo = TRUE, tidy = TRUE }
+'Under 18'
+DAG.u18
+'18 to 60'
+DAG.18_60
+'Over 60'
+DAG.o60
+'Male'
+DAG.Male
+'Female'
+DAG.Female
+'Underweight'
+DAG.underweight
+'Average BMI'
+DAG.avgbmi
+'Overweight and obese'
+DAG.obese
+```
+For all strata, 'C16:0', 'C18:0', 'C18:1n9c', 'C18:2n6c', 'C20:3n6', 'C20:4n6 +C20:3n3?', 'C20:5n3', 'C22:5n3', 'C22:6n3' are significant. However,  'C22:5n3' is missing from the 'Under 18' strata and 'C20:5n3' is missing from the 'underweight' strata.
+
+\begin{center}
+\includegraphics{~/Dropbox/Leeds_EPSRC+FSN_SummerStudentship_2017/Harry_Sweave/James_DAG.jpeg}
+$\bf{Figure}$ $\bf{1-}$ Three Directed Acyclic Graphs showing the chemical relationship between 10 FAs. The graph on the left is connected to each of the graphs on the right individually.
+\end{center}
+Comparing these findings to the above DAG, it can be seen that the FA 16.1 is in relatively low abundance for all strata, implying it is useful. However, this could imply that those classified as under 18 years old or underweight require this fatty acid more. A speculative, yet possible, explanation for this is that the FA is used for growth. This FA, Palmitoleic acid, is abundant in breast milk and "plays a role in different cell functions, from growth and proliferation to endoplasmic reticulum stress" (De Fabiani, 2011).
+
+Further, 'C20:5n3' and 'C22:5n3', missing from 'underweight' and 'Under 18' strata respectively are generally found to be in low abundance. However, in these particular strata, the abundance is low in the relevant blood samples, implying it is a useful substance. Reseearch has shown that these compounds, Eicosapentaenoic and Docosapentaenoic acid, are in high abundance in fish such as Salmon due to the algae they consume. These fish products are then consumed by humans and can then be found in breast milk. Tentatively, there is a possible relationship between these fatty acids and growth, to be explored further. The two FAs are similar in structure; however, Docosapentaenoic acid has two more carbon atoms than Eicosapentaenoic acid.
+\newpage
+\section{Lipid data}
+First, we will combine the lipid data with the binary data to reduce the data to just the lipids we are interested in.
+
+```{r lipid bin vect, echo = FALSE, tidy = TRUE }
+#Now, let us consider the lipid pools from which the FAs were identified.
+
+#To do this, we have a binary vector 
+bin_vect<- as.matrix(as.numeric(read.csv("~/Dropbox/Leeds_EPSRC+FSN_SummerStudentship_2017/Harry_Sweave/Binary_vector_of_Lipids.csv", header= T)))
+
+bin_vect_labels<- as.matrix(read.csv("~/Dropbox/Leeds_EPSRC+FSN_SummerStudentship_2017/Harry_Sweave/Binary_vector_of_Lipids_labels.csv", header= F))
+
+bin_vect_lipids<- bin_vect_labels
+for(i in 1:length(bin_vect_lipids)){
+  if(as.numeric(bin_vect[i]) == 1){
+    bin_vect_lipids<-bin_vect_lipids[-i]
+    i=i+1
+  }
+}
+#Now we have isolated the prior assumption of lipids that are believe to contribute
+
+
+lipid.mat<- read.csv("~/Dropbox/Leeds_EPSRC+FSN_SummerStudentship_2017/Harry_Sweave/Lipid_subset.csv", header= TRUE)
+
+```
+
+```{r lipid bin vector 2, echo = TRUE, tidy = TRUE }
+#As a check, sum all the relevant rows of lipid.mat to check they sum to around 1000
+checksum<- as.data.frame(as.numeric(rowSums(lipid.mat[1:nrow(lipid.mat),c(3:ncol(lipid.mat))],na.rm=TRUE)))
+#checksum
+#This is verified
+
+#Now multiply the lipid matrix by the binary vector
+lipid.mat.mult<- lipid.mat[,-1] #get rid of the ref
+lipid.mat.mult<- lipid.mat.mult[,-1] #get rid of the IS
+lipid.mat.mult<-as.matrix(lipid.mat.mult) #convert to a matrix for multiplication
+lipid.abund<- lipid.mat.mult%*%bin_vect
+
+#Iterate to find the relevant lipids as per the binary vector for higher granularity
+lipid.abund.indiv = matrix(ncol= sum(bin_vect), nrow = nrow(lipid.mat)) #create an empty vector
+j=1
+for(i in 1:length(bin_vect)){
+  if( as.numeric(bin_vect[i]) == 1){
+    lipid.abund.indiv[,j]<- lipid.mat.mult[,i] 
+    j= j+1
+  }
+}
+colnames(lipid.abund.indiv) =bin_vect_labels #Label the columns with the contributing lipid names
+#lipid.abund.indiv
+#Now we have the abundance of each contributing lipid in a matrix for analysis
+```
+
+Now, since we are not interested in the different types of lipids but their structure, we can merge rows that have the same structure e.g. all those that are of chemical structure 'C32:1'.
+```{r true lipid abundances, echo = TRUE, tidy = TRUE }
+#Find the total true lipid abundance for each individual by multiplying by internal standard
+
+true.lipid.abund.indiv = matrix(ncol= ncol(lipid.abund.indiv), nrow= nrow(lipid.abund.indiv))
+for(i in 1:nrow(lipid.abund.indiv)){
+  for(j in 1:ncol(lipid.abund.indiv)){
+    true.lipid.abund.indiv[i,j]<- (((lipid.abund.indiv[i, j] * as.numeric(lipid.mat[i,2])))/(checksum[i,1]))
+  }
+}
+colnames(true.lipid.abund.indiv) = bin_vect_labels
+
+#Substitute the names for configurations, since this is the variable of interest
+colnames(true.lipid.abund.indiv) = gsub(".*\\((.*)\\)", '\\1', colnames(true.lipid.abund.indiv) )
+colnames(true.lipid.abund.indiv)[,25]<- "33:3 or 36:2"
+
+#Now we have renamed the columns, we want to get rid of duplicates and add a reference for stratification
+true.lipid.abund.ref<- as.data.frame(true.lipid.abund.indiv)
+
+
+#Now let us consolidate duplicate columns 
+#length(colnames(true.lipid.abund.ref)) #73
+#length(unique(colnames(true.lipid.abund.ref))) #47
+true.lipid.abund.ref<- as.data.frame(lapply(split.default(true.lipid.abund.ref, names(true.lipid.abund.ref)), function(y) Reduce(`+`, y)), check.names=F)
+#Add ref back
+true.lipid.abund.ref<- cbind.data.frame(lipid.mat[,1], true.lipid.abund.ref)
+colnames(true.lipid.abund.ref)[1]<- "Ref"
+#true.lipid.abund.ref
+
+
+#Let us just quickly check that only unique columns remain and none have been ommitted 
+#length(unique(colnames(true.lipid.abund.ref))) #47 unique columns expected + the ref column, so 48
+#dim(true.lipid.abund.ref) # 453 rows and 48 columns, as expected
+```
+
+We can now stratify the relevant and simplified lipid pools in to the same strata as for the fatty acids, by age, gender and BMI. This can be done easily by using an individuals reference as a primary key to identify them to specific strata. This can then be used to extract their lipid profile from the 'True lipid abundances' subset.
+
+```{r primary key, echo = TRUE, tidy = TRUE }
+#The lipid data has now been cleansed we can stratify it in to the same groups as before easily
+require(dplyr)
+Y.u18.lipid<- filter(true.lipid.abund.ref, true.lipid.abund.ref[,1]   %in% X.u18.FA[,1] )
+Y.18_60.lipid<- filter(true.lipid.abund.ref, true.lipid.abund.ref[,1]   %in% X.18_60.FA[,1])
+Y.o60.lipid<- filter(true.lipid.abund.ref, true.lipid.abund.ref[,1]   %in% X.o60.FA[,1] )
+Y.Male.lipid <- filter(true.lipid.abund.ref, true.lipid.abund.ref[,1]   %in% X.Male.FA[,1] )
+Y.Female.lipid <- filter(true.lipid.abund.ref, true.lipid.abund.ref[,1]   %in% X.Female.FA[,1] )
+Y.underweight.lipid <- filter(true.lipid.abund.ref, true.lipid.abund.ref[,1]   %in% X.underweight.FA[,1] )
+Y.avgbmi.lipid <- filter(true.lipid.abund.ref, true.lipid.abund.ref[,1]   %in% X.avgbmi.FA[,1] )
+Y.obese.lipid <- filter(true.lipid.abund.ref, true.lipid.abund.ref[,1]   %in% X.obese.FA[,1])
+```
+\newpage
+\section{Canonical Correlation Analysis (CCA) of $X_{FA}$ vs $Y_{Lip}$}
+Canonical correlation analysis is method for exploring the relationships, specifically the correlation, between two multivariate sets of variables, in this case the fatty acids  $\big(X_{FA} \big)$  and their corresponding lipids $\big(Y_{Lip}\big)$. This can be defined mathematically as follows.
+
+Let $X_i$ for $i=1,...,k$ be the fatty acids and $Y_j$ for $j=1,...,n$ be the lipids, then:
+
+\begin{equation}
+\underline{X}_{N\text{x}k} = \underline{Y}_{N\text{x}n} \underline{\rho}_{n\text{x}k} + \underline{E}_{NxK}    \sim MVN(0_{N.k.}, \underline{\Sigma}_{kxk})
+\end{equation}
+
+Where '$\underline{\rho}$' is the correlation beteen the two data sets and '$\underline{E}$' is the bias. 
+
+We are particularly interested in $\underline{\rho}$ since it will identify any relationships between the fatty acids and lipids. It will also identify any intra-set correlations between the fatty acids and lipids individually. These three correlation matrices can then be plotted as a heatmap to efficiently visualise the relationships for further analysis. These heatmaps can be interpretted as follows:
+
+\underline{X correlation}
+For the X correlation heatmap, both the rows and columns are each of the fatty acids, in order, for the above FA data set. As can be seen by the diagonal, there is a strong positive correlation between a particular fatty acid and itself, as expected. This is then on a scale where a deep red indicates a strong positive correlation, a green indicates no correlation and a deep blue indicates a strong negative correlation.
+
+\underline{Y correlation}
+For the Y correlation heatmap, both the rows and columns are each of the lipids, in order, for the above lipid data set. As can be seen by the diagonal, there is a strong positive correlation between a particular lipid and itself, as expected. Again, this is then on a scale where a deep red indicates a strong positive correlation, a green indicates no correlation and a deep blue indicates a strong negative correlation.
+
+\underline{Cross Correlation}
+For the cross correlation heatmap, both the rows are the fatty acids and columns are each of the lipids, in order, for the above fatty acid and lipid data sets repsectively. Again, this is then on a scale where a deep red indicates a strong positive correlation, a green indicates no correlation and a deep blue indicates a strong negative correlation.
+
+\subsection{Under 18}
+```{r load cca package , echo = FALSE, tidy = TRUE }
+#Canonical correlation analysis of FAs against lipids
+#install.packages("CCA", lib = "/Users/Harry/anaconda/lib/R/library", "https://cran.ma.imperial.ac.uk/")
+#install.packages("CCA", "https://cran.ma.imperial.ac.uk/")
+
+require(CCA)
+```
+
+```{r cca u18 , echo = FALSE, tidy = TRUE}
+#u18 strata
+X.u18.FA.mat<- as.matrix(X.u18.FA[,c(-1,-40, -41, -42, -43, -44)])
+Y.u18.lipid.mat<- as.matrix(Y.u18.lipid[,-1])
+#X.u18.FA.mat
+#Y.u18.lipid.mat
+
+#dim(X.u18.FA.mat)
+#dim(Y.u18.lipid.mat)
+#cc(X.u18.FA.mat, Y.u18.lipid.mat)
+XY.u18.correl <- matcor(X.u18.FA.mat, Y.u18.lipid.mat)
+```
+
+```{r cca u18 plot, echo = TRUE, tidy = TRUE}
+img.matcor(XY.u18.correl, type = 2)
+```
+\newpage
+\subsection{18 to 60}
+```{r cca 18 to 60, echo = TRUE, tidy = TRUE }
+X.18_60.FA.mat<- as.matrix(X.18_60.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.18_60.FA.mat<- X.18_60.FA.mat[,c(-2,-32)]#Since C10.0 and C22.2 a column of zeros they are uninformative
+Y.18_60.lipid.mat<- as.matrix(Y.18_60.lipid[,-1])
+#Y.18_60.lipid.mat
+
+#dim(X.18_60.FA.mat)
+#dim(Y.18_60.lipid.mat)
+cc.18_60<-cc(X.18_60.FA.mat, Y.18_60.lipid.mat)
+XY.18_60.correl<- matcor(X.18_60.FA.mat, Y.18_60.lipid.mat)
+img.matcor(XY.18_60.correl , type = 2)
+#plt.cc(cc.18_60)
+```
+\newpage
+\subsection{60 and over}
+```{r cca over 60, echo = TRUE, tidy = TRUE }
+X.o_60.FA.mat<- as.matrix(X.o60.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.o_60.FA.mat<- X.o_60.FA.mat[,-32]#Since C22.2 is a column of zeros it is uninformative
+Y.o_60.lipid.mat<- as.matrix(Y.o60.lipid[,-1])
+#X.o_60.FA.mat
+#Y.o_60.lipid.mat
+
+dim(X.o_60.FA.mat)
+dim(Y.o_60.lipid.mat)
+#cc(X.o_60.FA.mat, Y.o_60.lipid.mat)
+XY.o_60.correl <- matcor(X.o_60.FA.mat, Y.o_60.lipid.mat)
+img.matcor(XY.o_60.correl, type = 2)
+```
+\newpage
+\subsection{Male}
+```{r cca male, echo = TRUE, tidy = TRUE }
+X.Male.FA.mat<- as.matrix(X.Male.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.Male.FA.mat<- X.Male.FA.mat[,-2]#Since C10.0 is a column of zeros it is uninformative
+Y.Male.lipid.mat<- as.matrix(Y.Male.lipid[,-1])
+#X.Male.FA.mat
+#Y.Male.lipid.mat
+
+dim(X.Male.FA.mat)
+dim(Y.Male.lipid.mat)
+#cc(X.Male.FA.mat, Y.Male.lipid.mat)
+XY.Male.correl <- matcor(X.Male.FA.mat, Y.Male.lipid.mat)
+img.matcor(XY.Male.correl, type = 2)
+```
+\newpage
+\subsection{Female}
+```{r cca female, echo = TRUE, tidy = TRUE }
+X.Female.FA.mat<- as.matrix(X.Female.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.Female.FA.mat<- X.Female.FA.mat[,-32]#Since C22.2 is a column of zeros it is uninformative
+Y.Female.lipid.mat<- as.matrix(Y.Female.lipid[,-1])
+#X.Female.FA.mat
+#Y.Female.lipid.mat
+
+dim(X.Female.FA.mat)
+dim(Y.Female.lipid.mat)
+#cc(X.Female.FA.mat, Y.Female.lipid.mat)
+XY.Female.correl <- matcor(X.Female.FA.mat, Y.Female.lipid.mat)
+img.matcor(XY.Female.correl, type = 2)
+```
+\newpage
+\subsection{Underweight}
+```{r cca underweight, echo = TRUE, tidy = TRUE }
+X.underweight.FA.mat<- as.matrix(X.underweight.FA[,c(-1,-40, -41, -42, -43, -44)])
+Y.underweight.lipid.mat<- as.matrix(Y.underweight.lipid[,-1])
+#X.underweight.FA.mat
+#Y.underweight.lipid.mat
+
+dim(X.underweight.FA.mat)
+dim(Y.underweight.lipid.mat)
+#cc(X.underweight.FA.mat, Y.underweight.lipid.mat)
+XY.underweight.correl <- matcor(X.underweight.FA.mat, Y.underweight.lipid.mat)
+img.matcor(XY.underweight.correl, type = 2)
+```
+\newpage
+\subsection{Average BMI}
+```{r cca avg bmi, echo = TRUE, tidy = TRUE }
+X.avgbmi.FA.mat<- as.matrix(X.avgbmi.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.avgbmi.FA.mat<- X.avgbmi.FA.mat[,c(-2,-32)]#Since C10.0 and C22.2 are columns of zeros they are uninformative
+Y.avgbmi.lipid.mat<- as.matrix(Y.avgbmi.lipid[,-1])
+#X.avgbmi.FA.mat
+#Y.avgbmi.lipid.mat
+
+dim(X.avgbmi.FA.mat)
+dim(Y.avgbmi.lipid.mat)
+#cc(X.avgbmi.FA.mat, Y.avgbmi.lipid.mat)
+XY.avgbmi.correl <- matcor(X.avgbmi.FA.mat, Y.avgbmi.lipid.mat)
+img.matcor(XY.avgbmi.correl, type = 2)
+```
+\newpage
+\subsection{Overweight and Obese}
+```{r cca obese, echo = TRUE, tidy = TRUE }
+X.obese.FA.mat<- as.matrix(X.obese.FA[,c(-1,-40, -41, -42, -43, -44)])
+X.obese.FA.mat<- X.obese.FA.mat[,c(-1,-32)]#Since C8.0 and C22.2 are columns of zeros they are uninformative
+Y.obese.lipid.mat<- as.matrix(Y.obese.lipid[,-1])
+#X.obese.FA.mat
+#Y.obese.lipid.mat
+
+dim(X.obese.FA.mat)
+dim(Y.obese.lipid.mat)
+#cc(X.obese.FA.mat, Y.obese.lipid.mat)
+XY.obese.correl <- matcor(X.obese.FA.mat, Y.obese.lipid.mat)
+img.matcor(XY.obese.correl, type = 2)
+```
+\newpage
+\section{An analysis of the subset of FAs in the first DAG in figure 1}
+In order to isolate the relationships between particular FAs and their corresponding lipids, it is neccessary to take an even smaller subset of the FA data in order to remove as much noise as possible. The easiest way to do this is to separate the data in to their three corresponding DAGs, since we know that there is a definite relationship between these FAs.
+First, we look at the first DAG, composed of the FAs '16:0', '16:1', 18:0' and '18:1' for each of the 8 strata previously established.
+
+\subsection{Under 18 }
+```{r cca subset fa u18, echo = TRUE, tidy = TRUE }
+X.u18.FA.DAG1<- as.matrix(X.u18.FA[,c(11,13,16,18)])
+Y.u18.lipid.mat<- as.matrix(Y.u18.lipid[,-1])
+#X.u18.FA.DAG1
+#Y.u18.lipid.mat
+
+dim(X.u18.FA.DAG1)
+dim(Y.u18.lipid.mat)
+#cc(X.u18.FA.DAG1, Y.u18.lipid.mat)
+XY.u18.DAG1.correl <- matcor(X.u18.FA.DAG1, Y.u18.lipid.mat)
+img.matcor(XY.u18.DAG1.correl , type = 2)
+```
+\newpage
+\subsection{18 to 60}
+```{r cca subset fa 18 to 60, echo = TRUE, tidy = TRUE }
+X.18_60.FA.DAG1<- X.18_60.FA[,c(11,13,16,18)]
+Y.18_60.lipid.mat<- as.matrix(Y.18_60.lipid[,-1])
+#X.18_60.FA.DAG1
+#Y.18_60.lipid.mat
+
+dim(X.18_60.FA.DAG1)
+dim(Y.18_60.lipid.mat)
+#cc(X.18_60.FA.DAG1, Y.18_60.lipid.mat)
+XY.18_60.DAG1.correl <- matcor(X.18_60.FA.DAG1, Y.18_60.lipid.mat)
+img.matcor(XY.18_60.DAG1.correl , type = 2)
+```
+\newpage
+\subsection{60 and over}
+```{r cca subset fa over 60, echo = TRUE, tidy = TRUE }
+X.o60.FA.DAG1<- X.o60.FA[,c(11,13,16,18)]
+Y.o60.lipid.mat<- as.matrix(Y.o60.lipid[,-1])
+#X.o60.FA.DAG1
+#Y.o60.lipid.mat
+
+dim(X.o60.FA.DAG1)
+dim(Y.o60.lipid.mat)
+#cc(X.o60.FA.DAG1, Y.o60.lipid.mat)
+XY.o60.DAG1.correl <- matcor(X.o60.FA.DAG1, Y.o60.lipid.mat)
+img.matcor(XY.o60.DAG1.correl , type = 2)
+```
+\newpage
+\subsection{Male}
+```{r cca subset fa male, echo = TRUE, tidy = TRUE }
+X.Male.FA.DAG1<- X.Male.FA[,c(11,13,16,18)]
+Y.Male.lipid.mat<- as.matrix(Y.Male.lipid[,-1])
+#X.Male.FA.DAG1
+#Y.Male.lipid.mat
+
+dim(X.Male.FA.DAG1)
+dim(Y.Male.lipid.mat)
+#cc(X.Male.FA.DAG1, Y.Male.lipid.mat)
+XY.Male.DAG1.correl <- matcor(X.Male.FA.DAG1, Y.Male.lipid.mat)
+img.matcor(XY.Male.DAG1.correl , type = 2)
+```
+\newpage
+\subsection{Female}
+```{r cca subset fa female, echo = TRUE, tidy = TRUE }
+X.Female.FA.DAG1<- X.Female.FA[,c(11,13,16,18)]
+Y.Female.lipid.mat<- as.matrix(Y.Female.lipid[,-1])
+#X.Female.FA.DAG1
+#Y.Female.lipid.mat
+
+dim(X.Female.FA.DAG1)
+dim(Y.Female.lipid.mat)
+#cc(X.Female.FA.DAG1, Y.Female.lipid.mat)
+XY.Female.DAG1.correl <- matcor(X.Female.FA.DAG1, Y.Female.lipid.mat)
+img.matcor(XY.Female.DAG1.correl , type = 2)
+```
+\newpage
+\subsection{Underweight}
+```{r cca subset fa underweight, echo = TRUE, tidy = TRUE }
+X.underweight.FA.DAG1<- X.underweight.FA[,c(11,13,16,18)]
+Y.underweight.lipid.mat<- as.matrix(Y.underweight.lipid[,-1])
+#X.underweight.FA.DAG1
+#Y.underweight.lipid.mat
+
+#dim(X.underweight.FA.DAG1)
+#dim(Y.underweight.lipid.mat)
+#cc(X.underweight.FA.DAG1, Y.underweight.lipid.mat)
+XY.underweight.DAG1.correl <- matcor(X.underweight.FA.DAG1, Y.underweight.lipid.mat)
+img.matcor(XY.underweight.DAG1.correl , type = 2)
+```
+\newpage
+\subsection{Average BMI}
+```{r cca subset fa avg bmi, echo = TRUE, tidy = TRUE }
+X.avgbmi.FA.DAG1<- X.avgbmi.FA[,c(11,13,16,18)]
+Y.avgbmi.lipid.mat<- as.matrix(Y.avgbmi.lipid[,-1])
+#X.avgbmi.FA.DAG1
+#Y.avgbmi.lipid.mat
+
+#dim(X.avgbmi.FA.DAG1)
+#dim(Y.avgbmi.lipid.mat)
+#cc(X.avgbmi.FA.DAG1, Y.avgbmi.lipid.mat)
+XY.avgbmi.DAG1.correl <- matcor(X.avgbmi.FA.DAG1, Y.avgbmi.lipid.mat)
+img.matcor(XY.avgbmi.DAG1.correl , type = 2)
+```
+\newpage
+\subsection{Overweight and Obese}
+```{r cca subset fa obese, echo = TRUE, tidy = TRUE }
+X.obese.FA.DAG1<- X.obese.FA[,c(11,13,16,18)]
+Y.obese.lipid.mat<- as.matrix(Y.obese.lipid[,-1])
+#X.obese.FA.DAG1
+#Y.obese.lipid.mat
+
+#dim(X.obese.FA.DAG1)
+#dim(Y.obese.lipid.mat)
+#cc(X.obese.FA.DAG1, Y.obese.lipid.mat)
+XY.obese.DAG1.correl <- matcor(X.obese.FA.DAG1, Y.obese.lipid.mat)
+img.matcor(XY.obese.DAG1.correl , type = 2)
+```
+\newpage
+\section{CCA analysis of the $1^{st}$ DAG FAs ('16:0', '16:1', 18:0' and '18:1') vs all possible lipids}
+Since it is not possible for these FAs to bond to form all of the lipids in earlier analysis, we can take an even smaller subset of the lipid data. It is geometrically possible for these FAs to form the lipids, '16:0', '16:1', '18:0', '18:1', '32:2', '32:0', '32:1', 34:0', '34:1', '36:2', '36:0' and 36:1'. Hence, we shall form a subset of these lipids; however it should be noted that there is no data for the lipids '34:0' and '36:0'. 
+\subsection{Under 18}
+```{r cca subset fa corres u18, echo = TRUE, tidy = TRUE }
+X.u18.FA.DAG1<- as.matrix(X.u18.FA[,c(11,13,16,18)])
+Y.u18.lipid.mat.corres<- as.matrix(Y.u18.lipid.mat[,c(2,3,5,6,13,11,12,17,23,22)])
+#X.u18.FA.DAG1
+#Y.u18.lipid.mat.corres
+
+#dim(X.u18.FA.DAG1)
+#dim(Y.u18.lipid.mat.corres)
+#cc(X.u18.FA.DAG1, Y.u18.lipid.mat.corres)
+XY.u18.DAG1.correl.corres <- matcor(X.u18.FA.DAG1, Y.u18.lipid.mat.corres)
+img.matcor(XY.u18.DAG1.correl.corres , type = 2)
+```
+\newpage
+\subsection{18 to 60}
+```{r cca subset fa corres 18 to 60, echo = TRUE, tidy = TRUE }
+X.18_60.FA.DAG1<- as.matrix(X.18_60.FA[,c(11,13,16,18)])
+Y.18_60.lipid.mat.corres<- as.matrix(Y.18_60.lipid.mat[,c(2,3,5,6,13,11,12,17,23,22)])
+#X.18_60.FA.DAG1
+#Y.18_60.lipid.mat.corres
+
+#dim(X.18_60.FA.DAG1)
+#dim(Y.18_60.lipid.mat.corres)
+#cc(X.18_60.FA.DAG1, Y.18_60.lipid.mat.corres)
+XY.18_60.DAG1.correl.corres <- matcor(X.18_60.FA.DAG1, Y.18_60.lipid.mat.corres)
+img.matcor(XY.18_60.DAG1.correl.corres , type = 2)
+```
+\newpage
+\subsection{Over 60}
+```{r cca subset fa corres over 60, echo = TRUE, tidy = TRUE }
+X.o60.FA.DAG1<- as.matrix(X.o60.FA[,c(11,13,16,18)])
+Y.o60.lipid.mat.corres<- as.matrix(Y.o60.lipid.mat[,c(2,3,5,6,13,11,12,17,23,22)])
+#X.o60.FA.DAG1
+#Y.o60.lipid.mat.corres
+
+#dim(X.o60.FA.DAG1)
+#dim(Y.o60.lipid.mat.corres)
+#cc(X.o60.FA.DAG1, Y.o60.lipid.mat.corres)
+XY.o60.DAG1.correl.corres <- matcor(X.o60.FA.DAG1, Y.o60.lipid.mat.corres)
+img.matcor(XY.o60.DAG1.correl.corres , type = 2)
+```
+\newpage
+\subsection{Male}
+```{r cca subset fa corres male, echo = TRUE, tidy = TRUE }
+X.Male.FA.DAG1<- as.matrix(X.Male.FA[,c(11,13,16,18)])
+Y.Male.lipid.mat.corres<- as.matrix(Y.Male.lipid.mat[,c(2,3,5,6,13,11,12,17,23,22)])
+#X.Male.FA.DAG1
+#Y.Male.lipid.mat.corres
+
+#dim(X.Male.FA.DAG1)
+#dim(Y.Male.lipid.mat.corres)
+#cc(X.Male.FA.DAG1, Y.Male.lipid.mat.corres)
+XY.Male.DAG1.correl.corres <- matcor(X.Male.FA.DAG1, Y.Male.lipid.mat.corres)
+img.matcor(XY.Male.DAG1.correl.corres , type = 2)
+```
+\newpage
+\subsection{Female}
+```{r cca subset fa corres female, echo = TRUE, tidy = TRUE }
+X.Female.FA.DAG1<- as.matrix(X.Female.FA[,c(11,13,16,18)])
+Y.Female.lipid.mat.corres<- as.matrix(Y.Female.lipid.mat[,c(2,3,5,6,13,11,12,17,23,22)])
+#X.Female.FA.DAG1
+#Y.Female.lipid.mat.corres
+
+#dim(X.Female.FA.DAG1)
+#dim(Y.Female.lipid.mat.corres)
+#cc(X.Female.FA.DAG1, Y.Female.lipid.mat.corres)
+XY.Female.DAG1.correl.corres <- matcor(X.Female.FA.DAG1, Y.Female.lipid.mat.corres)
+img.matcor(XY.Female.DAG1.correl.corres , type = 2)
+```
+\newpage
+\subsection{Underweight}
+```{r cca subset fa corres underweight, echo = TRUE, tidy = TRUE }
+X.underweight.FA.DAG1<- as.matrix(X.underweight.FA[,c(11,13,16,18)])
+Y.underweight.lipid.mat.corres<- as.matrix(Y.underweight.lipid.mat[,c(2,3,5,6,13,11,12,17,23,22)])
+#X.underweight.FA.DAG1
+#Y.underweight.lipid.mat.corres
+
+#dim(X.underweight.FA.DAG1)
+#dim(Y.underweight.lipid.mat.corres)
+#cc(X.underweight.FA.DAG1, Y.underweight.lipid.mat.corres)
+XY.underweight.DAG1.correl.corres <- matcor(X.underweight.FA.DAG1, Y.underweight.lipid.mat.corres)
+img.matcor(XY.underweight.DAG1.correl.corres , type = 2)
+```
+\newpage
+\subsection{Average BMI}
+```{r cca subset fa corres avg bmi, echo = TRUE, tidy = TRUE }
+X.avgbmi.FA.DAG1<- as.matrix(X.avgbmi.FA[,c(11,13,16,18)])
+Y.avgbmi.lipid.mat.corres<- as.matrix(Y.avgbmi.lipid.mat[,c(2,3,5,6,13,11,12,17,23,22)])
+#X.avgbmi.FA.DAG1
+#Y.avgbmi.lipid.mat.corres
+
+#dim(X.avgbmi.FA.DAG1)
+#dim(Y.avgbmi.lipid.mat.corres)
+#cc(X.avgbmi.FA.DAG1, Y.avgbmi.lipid.mat.corres)
+XY.avgbmi.DAG1.correl.corres <- matcor(X.avgbmi.FA.DAG1, Y.avgbmi.lipid.mat.corres)
+img.matcor(XY.avgbmi.DAG1.correl.corres , type = 2)
+```
+\newpage
+\subsection{Overweight and Obese}
+```{r cca subset fa corres obese, echo = TRUE, tidy = TRUE }
+X.obese.FA.DAG1<- as.matrix(X.obese.FA[,c(11,13,16,18)])
+Y.obese.lipid.mat.corres<- as.matrix(Y.obese.lipid.mat[,c(2,3,5,6,13,11,12,17,23,22)])
+#X.obese.FA.DAG1
+#Y.obese.lipid.mat.corres
+
+#dim(X.obese.FA.DAG1)
+#dim(Y.obese.lipid.mat.corres)
+#cc(X.obese.FA.DAG1, Y.obese.lipid.mat.corres)
+XY.obese.DAG1.correl.corres <- matcor(X.obese.FA.DAG1, Y.obese.lipid.mat.corres)
+img.matcor(XY.obese.DAG1.correl.corres , type = 2)
+
+```
+\subsection{A note on the 2nd and 3rd DAGs}
+It is important to note that the second and third DAGs cannot be isolated for CCA analysis as they do not function in isolation from 
+
+\newpage
+\section{Ordering the CCA correlation matrix for cluster analysis}
+
+```{R sort u18, echo = TRUE, tidy = TRUE }
+x <- XY.u18.correl$XYcor
+
+ncol(x)
+column.order.u18<- corrplot::corrMatOrder(x, order= "hclust")
+list.column.order.u18 <- as.list(c(column.order.u18))
+ordered_u18<- XY.u18.correl$XYcor[ c(column.order.u18), c(column.order.u18)]
+
+XY.u18.correl$XYcor = ordered_u18
+img.matcor(XY.u18.correl, type = 2)
+colnames(ordered_u18)
+plot(hclust(dist(((XY.u18.correl$XYcor)))))
+
+
+#basic clustering
+kmeans<-kmeans(x, 2)
+clusplot(x, kmeans$cluster)
+
+kmeans1<- kmeans(x, 4)
+clusplot(x, kmeans1$cluster)
+
+#Show the clusters on a dendogram
+H.fit<- hclust(dist((XY.u18.correl$XYcor)))
+plot(H.fit)
+groups <- cutree(H.fit, k=4)
+rect.hclust(H.fit, k=4, border="red")
+```
+
+```{r sort 18 to 60, echo = TRUE, tidy = TRUE }
+x <- XY.18_60.correl$XYcor
+
+ncol(x)
+column.order.18_60<- corrplot::corrMatOrder(x, order= "hclust")
+list.column.order.18_60 <- as.list(c(column.order.18_60))
+ordered_18_60<- XY.18_60.correl$XYcor[ c(column.order.18_60), c(column.order.18_60)]
+
+XY.18_60.correl$XYcor = ordered_18_60
+img.matcor(XY.18_60.correl, type = 2)
+colnames(ordered_18_60)
+plot(hclust(dist(((XY.18_60.correl$XYcor)))))
+
+#basic clustering
+kmeans<-kmeans(x, 2)
+clusplot(x, kmeans$cluster)
+
+kmeans1<- kmeans(x, 4)
+clusplot(x, kmeans1$cluster)
+
+#Show the clusters on a dendogram
+H.fit<- hclust(dist((XY.18_60.correl$XYcor)))
+plot(H.fit)
+groups <- cutree(H.fit, k=4)
+rect.hclust(H.fit, k=4, border="red")
+```
+
+
+```{r sort over 60, echo = TRUE, tidy = TRUE }
+x <- XY.o_60.correl$XYcor
+
+ncol(x)
+column.order.o60<- corrplot::corrMatOrder(x, order= "hclust")
+list.column.order.o60 <- as.list(c(column.order.o60))
+ordered_o60<- XY.o_60.correl$XYcor[ c(column.order.o60), c(column.order.o60)]
+
+XY.o_60.correl$XYcor = ordered_o60
+img.matcor(XY.o_60.correl, type = 2)
+colnames(ordered_o60)
+plot(hclust(dist(((XY.o_60.correl$XYcor)))))
+
+#basic clustering
+kmeans<-kmeans(x, 2)
+clusplot(x, kmeans$cluster)
+
+kmeans1<- kmeans(x, 4)
+clusplot(x, kmeans1$cluster)
+
+#Show the clusters on a dendogram
+H.fit<- hclust(dist((XY.o_60.correl$XYcor)))
+plot(H.fit)
+groups <- cutree(H.fit, k=4)
+rect.hclust(H.fit, k=4, border="red")
+```
+
+
+```{r sort male, echo = TRUE, tidy = TRUE }
+x <- XY.Male.correl$XYcor
+
+ncol(x)
+column.order.Male<- corrplot::corrMatOrder(x, order= "hclust")
+list.column.order.Male <- as.list(c(column.order.Male))
+ordered_Male<- XY.Male.correl$XYcor[ c(column.order.Male), c(column.order.Male)]
+
+XY.Male.correl$XYcor = ordered_Male
+img.matcor(XY.Male.correl, type = 2)
+colnames(ordered_Male)
+plot(hclust(dist(((XY.Male.correl$XYcor)))))
+
+#basic clustering
+kmeans<-kmeans(x, 2)
+clusplot(x, kmeans$cluster)
+
+kmeans1<- kmeans(x, 4)
+clusplot(x, kmeans1$cluster)
+
+#Show the clusters on a dendogram
+H.fit<- hclust(dist((XY.Male.correl$XYcor)))
+plot(H.fit)
+groups <- cutree(H.fit, k=4)
+rect.hclust(H.fit, k=4, border="red")
+```
+
+```{r sort female, echo = TRUE, tidy = TRUE }
+x <- XY.Female.correl$XYcor
+
+ncol(x)
+column.order.Female<- corrplot::corrMatOrder(x, order= "hclust")
+list.column.order.Female <- as.list(c(column.order.Female))
+ordered_Female<- XY.Female.correl$XYcor[ c(column.order.Female), c(column.order.Female)]
+
+XY.Female.correl$XYcor = ordered_Female
+img.matcor(XY.Female.correl, type = 2)
+colnames(ordered_Female)
+plot(hclust(dist(((XY.Female.correl$XYcor)))))
+
+#basic clustering
+kmeans<-kmeans(x, 2)
+clusplot(x, kmeans$cluster)
+
+kmeans1<- kmeans(x, 4)
+clusplot(x, kmeans1$cluster)
+
+#Show the clusters on a dendogram
+H.fit<- hclust(dist((XY.Female.correl$XYcor)))
+plot(H.fit)
+groups <- cutree(H.fit, k=4)
+rect.hclust(H.fit, k=4, border="red")
+```
+
+```{r sort underweight, echo = TRUE, tidy = TRUE }
+x <- XY.underweight.correl$XYcor
+
+ncol(x)
+column.order.underweight<- corrplot::corrMatOrder(x, order= "hclust")
+list.column.order.underweight <- as.list(c(column.order.underweight))
+ordered_underweight<- XY.underweight.correl$XYcor[ c(column.order.underweight), c(column.order.underweight)]
+
+XY.underweight.correl$XYcor = ordered_underweight
+img.matcor(XY.underweight.correl, type = 2)
+colnames(ordered_underweight)
+plot(hclust(dist(((XY.underweight.correl$XYcor)))))
+
+
+#basic clustering
+kmeans<-kmeans(x, 2)
+clusplot(x, kmeans$cluster)
+
+kmeans1<- kmeans(x, 4)
+clusplot(x, kmeans1$cluster)
+
+#Show the clusters on a dendogram
+H.fit<- hclust(dist((XY.underweight.correl$XYcor)))
+plot(H.fit)
+groups <- cutree(H.fit, k=4)
+rect.hclust(H.fit, k=4, border="red")
+```
+
+```{r sort average bmi, echo = TRUE, tidy = TRUE }
+x <- XY.avgbmi.correl$XYcor
+
+ncol(x)
+column.order.avgbmi<- corrplot::corrMatOrder(x, order= "hclust")
+list.column.order.avgbmi <- as.list(c(column.order.avgbmi))
+ordered_avgbmi<- XY.avgbmi.correl$XYcor[ c(column.order.avgbmi), c(column.order.avgbmi)]
+
+XY.avgbmi.correl$XYcor = ordered_avgbmi
+img.matcor(XY.avgbmi.correl, type = 2)
+colnames(ordered_avgbmi)
+plot(hclust(dist(((XY.avgbmi.correl$XYcor)))))
+
+#basic clustering
+kmeans<-kmeans(x, 2)
+clusplot(x, kmeans$cluster)
+
+kmeans1<- kmeans(x, 4)
+clusplot(x, kmeans1$cluster)
+
+#Show the clusters on a dendogram
+H.fit<- hclust(dist((XY.avgbmi.correl$XYcor)))
+plot(H.fit)
+groups <- cutree(H.fit, k=4)
+rect.hclust(H.fit, k=4, border="red")
+```
+
+```{r sort overweight and obese, echo = TRUE, tidy = TRUE }
+x <- XY.obese.correl$XYcor
+
+ncol(x)
+column.order.obese<- corrplot::corrMatOrder(x, order= "hclust")
+list.column.order.obese <- as.list(c(column.order.obese))
+ordered_obese<- XY.obese.correl$XYcor[ c(column.order.obese), c(column.order.obese)]
+
+XY.obese.correl$XYcor = ordered_obese
+img.matcor(XY.obese.correl, type = 2)
+colnames(ordered_obese)
+
+plot(hclust(dist((XY.obese.correl$XYcor))))
+
+#basic clustering
+kmeans<-kmeans(x, 2)
+clusplot(x, kmeans$cluster)
+
+kmeans1<- kmeans(x, 4)
+clusplot(x, kmeans1$cluster)
+
+#Show the clusters on a dendogram
+H.fit<- hclust(dist((XY.obese.correl$XYcor)))
+plot(H.fit)
+groups <- cutree(H.fit, k=4)
+rect.hclust(H.fit, k=4, border="red")
+
+
+require(BHC)
+bhc()
+```
